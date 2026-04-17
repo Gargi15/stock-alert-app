@@ -19,7 +19,7 @@ function App() {
   useEffect(() => {
     async function fetchUser() {
       try {
-        const res = await axios.get(`http://localhost:3000/user/${USER_ID}`);
+        const res = await axios.get(`https://stock-alert-api-734i.onrender.com/user/${USER_ID}`);
   
         if (res.data) {
           setWatchlist(res.data.watchlist || []);
@@ -50,7 +50,7 @@ function App() {
     try {
       setSaving(true);
   
-      await axios.post("http://localhost:3000/user/update", {
+      await axios.post("https://stock-alert-api-734i.onrender.com//user/update", {
         userId: USER_ID,
         watchlist,
         threshold: Number(threshold)
