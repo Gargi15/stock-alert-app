@@ -50,7 +50,7 @@ function App() {
     try {
       setSaving(true);
   
-      await axios.post("https://stock-alert-api-734i.onrender.com//user/update", {
+      await axios.post("https://stock-alert-api-734i.onrender.com/user/update", {
         userId: USER_ID,
         watchlist,
         threshold: Number(threshold)
