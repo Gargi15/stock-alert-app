@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // 🔹 Get user (for now hardcode userId)
 app.get("/user/:userId", async (req, res) => {
@@ -37,5 +37,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`API running on http://localhost:${PORT}`);
+    console.log(`API running on ${PORT}`);
 });
