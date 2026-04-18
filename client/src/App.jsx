@@ -1,29 +1,48 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-
-const STOCK_OPTIONS = [
-  "RELIANCE.NS",
-  "TCS.NS",
-  "INFY.NS",
-  "HDFCBANK.NS"
-];
-
-const USER_ID = "gargi"; // same as Mongo
+import { API_URL, STOCK_OPTIONS, DEFAULT_USER_ID } from "./config/constants";
 
 function App() {
+  const [userId, setUserId] = useState(DEFAULT_USER_ID);
+  const [debouncedUserId, setDebouncedUserId] = useState(userId);
+  const [userStatus, setUserStatus] = useState("idle"); 
+// "idle" | "checking" | "exists" | "new" | "error"
   const [threshold, setThreshold] = useState(2);
   const [watchlist, setWatchlist] = useState([]);
   const [selectedStock, setSelectedStock] = useState(STOCK_OPTIONS[0]);
 
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedUserId(userId.trim());
+    }, 600); // wait 600ms after typing stops
+  
+    return () => clearTimeout(timer);
+  }, [userId]);
+
   // 🔹 Load user data
   useEffect(() => {
     async function fetchUser() {
+      if (!debouncedUserId) {
+        setUserStatus("idle");
+        return;
+      }
       try {
-        const res = await axios.get(`https://stock-alert-api-734i.onrender.com/user/${USER_ID}`);
+
+        setUserStatus("checking");
+        const res = await axios.get(`${API_URL}/user/${debouncedUserId}`);
   
         if (res.data) {
           setWatchlist(res.data.watchlist || []);
           setThreshold(res.data.threshold || 2);
+          setUserStatus("exists");
+        }else {
+          // New user → default values
+          setWatchlist([]);
+          setThreshold(2);
+          setUserStatus("new");
+
+          
         }
       } catch (err) {
         console.error("Error fetching user:", err.message);
@@ -31,7 +50,7 @@ function App() {
     }
   
     fetchUser();
-  }, []);
+  }, [debouncedUserId]);
 
   const addStock = () => {
     if (!watchlist.includes(selectedStock)) {
@@ -50,8 +69,8 @@ function App() {
     try {
       setSaving(true);
   
-      await axios.post("https://stock-alert-api-734i.onrender.com/user/update", {
-        userId: USER_ID,
+      await axios.post(`${API_URL}/user/update`, {
+        userId: userId,
         watchlist,
         threshold: Number(threshold)
       });
@@ -70,7 +89,36 @@ function App() {
         <h2 className="text-2xl font-bold mb-4 text-indigo-600">
           📈 Stock Alert App
         </h2>
-  
+        <div className="mb-4">
+          <label className="block text-sm font-medium mb-1">
+            User ID
+          </label>
+          <input
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            placeholder="Enter user ID (e.g. gargi)"
+            className="w-full border rounded-lg p-2"
+          />
+        </div>
+        <div className="mt-1 text-sm">
+            {userStatus === "checking" && (
+              <span className="text-gray-500">Checking user...</span>
+            )}
+
+            {userStatus === "exists" && (
+              <span className="text-green-600">User found ✅</span>
+            )}
+
+            {userStatus === "new" && (
+              <span className="text-orange-500">
+                New user — will be created on Save
+              </span>
+            )}
+
+            {userStatus === "error" && (
+              <span className="text-red-500">Error fetching user</span>
+            )}
+        </div>
         <div className="mb-4">
           <label className="block text-sm font-medium">Threshold (%)</label>
           <input
@@ -126,7 +174,8 @@ function App() {
   
         <button
           onClick={saveConfig}
-          className="mt-4 w-full bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition"
+          disabled={!debouncedUserId}
+          className="mt-4 w-full bg-green-500 text-white p-2 rounded-lg disabled:bg-gray-300"
         >
           {saving ? "Saving..." : "💾 Save"}
         </button>
