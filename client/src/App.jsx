@@ -131,7 +131,7 @@ function App() {
   
         if (res.data && res.data.watchlist !== undefined) {
           setWatchlist(res.data.watchlist || []);
-          setThreshold(res.data.threshold || 2);
+          setThreshold(res.data.threshold ?? 2);
           setUserStatus("exists");
         } else {
           setWatchlist([]);
