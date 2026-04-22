@@ -18,3 +18,7 @@ yarn-error.log*
 
 # OS / misc
 .DS_Store
+
+#firebase SErvice Account
+serviceAccountKey.json
+server/serviceAccountKey,json
