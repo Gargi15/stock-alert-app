@@ -5,7 +5,8 @@ import cron from "node-cron";
 import { checkMarket } from "./services/marketService.js";
 import { getMessagingInstance } from "./firebaseAdmin.js";
 
-
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
 app.use(cors());
@@ -30,14 +31,22 @@ app.get("/user/:userId", async (req, res) => {
 
 // 🔹 Update watchlist + threshold
 app.post("/user/update", async (req, res) => {
-    const { userId, watchlist, threshold } = req.body;
+    const { userId, watchlist, threshold, email } = req.body;
+
+    if (!userId) {
+    return res.status(400).json({ error: "Missing userId" });
+    };
 
     const db = await connectDB();
 
     await db.collection("users").updateOne(
-        { userId },
+        { userId: userId },
         { 
-            $set: { watchlist, threshold } ,
+            $set: { 
+                watchlist, 
+                threshold,
+                ...(email && { email })
+             } ,
             $setOnInsert: {
                 indices: ["NIFTY", "SENSEX"]
               }
@@ -50,30 +59,29 @@ app.post("/user/update", async (req, res) => {
 });
 
 
-
 app.post("/user/link-firebase", async (req, res) => {
-    const { firebaseUid, email, existingUserId } = req.body;
+    const { firebaseUid, email } = req.body;
+  
+    if (!firebaseUid) {
+      return res.status(400).json({ error: "Missing firebaseUid" });
+    }
   
     const db = await connectDB();
   
-    let user = null;
+    // 1️⃣ Try finding user by firebaseUid
+    let user = await db.collection("users").findOne({ firebaseUid });
   
-    // 1️⃣ Try existing user via your current system
-    if (existingUserId) {
-      user = await db.collection("users").findOne({ userId: existingUserId });
-    }
-  
-    // 2️⃣ Try via email (future-proofing)
+    // 2️⃣ If not found, try by email (merge case)
     if (!user && email) {
       user = await db.collection("users").findOne({ email });
     }
   
-    // 3️⃣ If no user → create new
+    // 3️⃣ If still not found → create new user
     if (!user) {
       const newUser = {
-        userId: existingUserId || firebaseUid,
-        email,
+        userId: firebaseUid,   // ✅ ALWAYS firebase UID
         firebaseUid,
+        email,
         tokens: [],
         watchlist: [],
         threshold: 2,
@@ -85,11 +93,12 @@ app.post("/user/link-firebase", async (req, res) => {
       return res.json(newUser);
     }
   
-    // 4️⃣ Link Firebase UID to existing user
+    // 4️⃣ If user exists → unify identity
     await db.collection("users").updateOne(
       { _id: user._id },
       {
         $set: {
+          userId: firebaseUid,     // ✅ enforce consistency
           firebaseUid,
           email: email || user.email
         }
@@ -147,7 +156,7 @@ app.post("/test-notification", async (req, res) => {
         token,
         notification: {
           title: "📈 Stock Alert",
-          body: "Test notification from your app 🚀",
+          body: `Token: ${token.slice(-6)}`,
         },
       });
   
