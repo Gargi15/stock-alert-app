@@ -21,4 +21,6 @@ yarn-error.log*
 
 #firebase SErvice Account
 serviceAccountKey.json
-server/serviceAccountKey,json
+
+#main file
+server/serviceAccountKey,json 
