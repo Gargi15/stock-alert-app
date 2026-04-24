@@ -4,6 +4,8 @@ import { connectDB } from "./db.js";
 import cron from "node-cron";
 import { checkMarket } from "./services/marketService.js";
 import { getMessagingInstance } from "./firebaseAdmin.js";
+import { getNiftyData, getSensexData } from "./stockService.js";
+
 
 import dotenv from "dotenv";
 dotenv.config();
@@ -128,6 +130,31 @@ app.post("/user/link-firebase", async (req, res) => {
     );
   
     res.json({ success: true });
+  });
+
+  app.get("/market/summary", async (req, res) => {
+    try {
+      const nifty = await getNiftyData();
+      const sensex = await getSensexData();
+  
+      const calcChange = (price, prevClose) => {
+        return ((price - prevClose) / prevClose) * 100;
+      };
+  
+      res.json({
+        nifty: {
+          price: nifty.price,
+          change: calcChange(nifty.price, nifty.prevClose),
+        },
+        sensex: {
+          price: sensex.price,
+          change: calcChange(sensex.price, sensex.prevClose),
+        },
+      });
+    } catch (err) {
+      console.error("Summary error:", err.message);
+      res.status(500).json({ error: "Failed to fetch summary" });
+    }
   });
 
 app.get("/", (req, res) => {

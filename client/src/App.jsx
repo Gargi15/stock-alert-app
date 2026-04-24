@@ -5,6 +5,7 @@ import { auth } from "./firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { messagingPromise } from "./firebase";
 import { getToken } from "firebase/messaging";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 function App() {
   const [userStatus, setUserStatus] = useState("idle"); 
@@ -15,6 +16,14 @@ function App() {
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState("login"); 
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [marketSummary, setMarketSummary] = useState(null);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setFirebaseUser(null);
+  };
 
 
   const getDeviceToken = async () => {
@@ -37,12 +46,9 @@ function App() {
       const token = await getToken(messaging, {
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY
       });
-
       console.log("✅ Step 4: FCM Token:", token);
-
-  
-      console.log("FCM Token:", token);
       return token;
+
     } catch (err) {
       console.error("Token error:", err);
       return null;
@@ -67,10 +73,7 @@ function App() {
         existingUserId: firebaseUser.uid // your current input field
       });
 
-      console.log("👉 Calling getDeviceToken...");
       const token = await getDeviceToken();
-      console.log("Token is: ", token)
-
 
       if (token) {
         await axios.post(`${API_URL}/user/save-token`, {
@@ -147,14 +150,66 @@ function App() {
     fetchUser();
   }, [firebaseUser]);
 
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setFirebaseUser(user);
+      } else {
+        setFirebaseUser(null);
+      }
+    });
+  
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+  
+    const fetchSummary = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/market/summary`);
+        setMarketSummary(res.data);
+      } catch (err) {
+        console.error("Summary fetch failed", err);
+      }
+    };
+  
+    fetchSummary();
+  }, [firebaseUser]);
+
+
   const addStock = () => {
+    if (!selectedStock) return;
+  
     if (!watchlist.includes(selectedStock)) {
-      setWatchlist([...watchlist, selectedStock]);
+      const newWatchlist = [...watchlist, selectedStock];
+      setWatchlist(newWatchlist);
+  
+      // 👇 compute next available stock immediately
+      const remainingStocks = STOCK_OPTIONS.filter(
+        stock => !newWatchlist.includes(stock)
+      );
+  
+      if (remainingStocks.length > 0) {
+        setSelectedStock(remainingStocks[0]);
+      } else {
+        setSelectedStock(""); // nothing left
+      }
     }
   };
 
   const removeStock = (stock) => {
-    setWatchlist(watchlist.filter(s => s !== stock));
+    const newWatchlist = watchlist.filter(s => s !== stock);
+    setWatchlist(newWatchlist);
+  
+    const remainingStocks = STOCK_OPTIONS.filter(
+      s => !newWatchlist.includes(s)
+    );
+  
+    if (remainingStocks.length > 0) {
+      setSelectedStock(remainingStocks[0]);
+    }
   };
 
   // 🔹 Save to backend
@@ -176,6 +231,12 @@ function App() {
       setSaving(false);
     }
   };
+
+  const availableStocks = STOCK_OPTIONS.filter(
+    stock => !watchlist.includes(stock)
+  );
+
+  
 
   return (
     <div className="min-h-screen bg-gradient-to-r from-blue-50 to-indigo-100 p-6">
@@ -204,95 +265,201 @@ function App() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full border rounded-lg p-2 mb-2"
               />
-              <div className="flex gap-2">
-                <button onClick={login} className="bg-blue-500 text-white px-4 py-2 rounded">
+              <div className="flex mb-3 border rounded-lg overflow-hidden bg-gray-100">
+                <button
+                  onClick={() => setAuthMode("login")}
+                  className={`flex-1 py-2 text-sm font-medium ${
+                    authMode === "login"
+                      ? "bg-indigo-500 text-white"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
+                >
                   Login
                 </button>
-                <button onClick={signup} className="bg-gray-500 text-white px-4 py-2 rounded">
+                <button
+                  onClick={() => setAuthMode("signup")}
+                  className={`flex-1 py-2 text-sm font-medium transition ${
+                    authMode === "signup"
+                      ? "bg-indigo-500 text-white shadow"
+                      : "bg-white text-gray-500"
+                  }`}
+                >
                   Signup
                 </button>
               </div>
+              <p className="text-xs text-gray-400 mb-2 text-center">
+                  {authMode === "login"
+                    ? "Welcome back 👋"
+                    : "Create a new account to get started"}
+              </p>
+              <button
+                  onClick={authMode === "login" ? login : signup}
+                  className="w-full bg-indigo-500 text-white px-4 py-2 rounded-lg"
+              >
+                  {authMode === "login" ? "Login" : "Sign Up"}
+              </button>
             </>
+
           ) : (
-            <div className="text-sm">
-              <div className="text-sm text-green-600">
+            <div className="flex justify-between items-center text-sm mb-2">
+              <div className="text-green-600">
                 👤 {firebaseUser.email}
                 {userStatus === "exists" && " • User found ✅"}
                 {userStatus === "checking" && " • Checking..."}
                 {userStatus === "error" && " • Error ❌"}
               </div>
+
+              <button
+                onClick={handleLogout}
+                className="text-xs px-3 py-1 border border-red-400 text-red-500 rounded-full hover:bg-red-50"
+                >
+                Logout
+              </button>
             </div>
           )}
         </div>
   
         {/* 🔒 ONLY SHOW APP AFTER LOGIN */}
         {firebaseUser && (
-          <>
-            <div className="mb-4">
-              <label className="block text-sm font-medium">Threshold (%)</label>
-              <input
-                type="number"
-                value={threshold}
-                onChange={(e) => setThreshold(e.target.value)}
-                className="mt-1 w-full border rounded-lg p-2"
-              />
-            </div>
-  
-            <div className="flex gap-2 mb-4">
-              <select
-                value={selectedStock}
-                onChange={(e) => setSelectedStock(e.target.value)}
-                className="flex-1 border rounded-lg p-2"
-              >
-                {STOCK_OPTIONS
-                  .filter(stock => !watchlist.includes(stock))
-                  .map(stock => (
-                    <option key={stock} value={stock}>
-                      {stock.replace(".NS", "")}
-                    </option>
-                ))}
-              </select>
-  
-              <button
-                onClick={addStock}
-                className="bg-indigo-500 text-white px-4 rounded-lg"
-              >
-                Add
-              </button>
-            </div>
-  
-            <h3 className="font-semibold mb-3 text-gray-700">Your Watchlist</h3>
-  
-            {watchlist.length === 0 && (
-              <p className="text-gray-400 text-sm">No stocks added yet</p>
-            )}
-  
-            <ul className="space-y-2">
-              {watchlist.map(stock => (
-                <li
-                  key={stock}
-                  className="flex justify-between items-center bg-gray-100 p-3 rounded-lg shadow-sm hover:shadow-md transition"
+            <>
+              <div className="flex mb-4 border rounded-lg overflow-hidden bg-gray-100">
+                <button
+                  onClick={() => setActiveTab("dashboard")}
+                  className={`flex-1 py-2 text-sm font-medium ${
+                    activeTab === "dashboard"
+                      ? "bg-indigo-500 text-white"
+                      : "text-gray-600"
+                  }`}
                 >
-                  {stock.replace(".NS", "")}
-  
-                  <button
-                    onClick={() => removeStock(stock)}
-                    className="text-red-500 hover:text-red-700 text-lg font-bold"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
-            </ul>
-  
-            <button
-              onClick={saveConfig}
-              disabled={!firebaseUser}
-              className="mt-4 w-full bg-green-500 text-white p-2 rounded-lg disabled:bg-gray-300"
-            >
-              {saving ? "Saving..." : "💾 Save"}
-            </button>
-          </>
+                  📈 Dashboard
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("summary")}
+                  className={`flex-1 py-2 text-sm font-medium ${
+                    activeTab === "summary"
+                      ? "bg-indigo-500 text-white"
+                      : "text-gray-600"
+                  }`}
+                >
+                  📊 Summary
+                </button>
+              </div>
+              
+              {activeTab === "dashboard" && (
+                <>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium">Threshold (%)</label>
+                        <input
+                          type="number"
+                          value={threshold}
+                          onChange={(e) => setThreshold(e.target.value)}
+                          className="mt-1 w-full border rounded-lg p-2"
+                        />
+                      </div>
+
+                      <div className="flex gap-2 mb-4">
+                        <select
+                          value={selectedStock || ""}
+                          onChange={(e) => setSelectedStock(e.target.value)}
+                          className="flex-1 border rounded-lg p-2"
+                          disabled={availableStocks.length === 0}
+                        >
+                          {availableStocks.length > 0 ? (
+                            availableStocks.map((stock) => (
+                              <option key={stock} value={stock}>
+                                {stock.replace(".NS", "")}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="">No stocks left</option>
+                          )}
+                        </select>
+
+                        <button
+                          onClick={addStock}
+                          disabled={!selectedStock || availableStocks.length === 0}
+                          className="bg-indigo-500 text-white px-4 rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <h3 className="font-semibold mb-3 text-gray-700">Your Watchlist</h3>
+            
+                      {watchlist.length === 0 && (
+                        <p className="text-gray-400 text-sm">No stocks added yet</p>
+                      )}
+            
+                      <ul className="space-y-2">
+                        {watchlist.map(stock => (
+                          <li
+                            key={stock}
+                            className="flex justify-between items-center bg-gray-100 p-3 rounded-lg shadow-sm hover:shadow-md transition"
+                          >
+                            {stock.replace(".NS", "")}
+            
+                            <button
+                              onClick={() => removeStock(stock)}
+                              className="text-red-500 hover:text-red-700 text-lg font-bold"
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+            
+                      <button
+                        onClick={saveConfig}
+                        disabled={!firebaseUser}
+                        className="mt-4 w-full bg-green-500 text-white p-2 rounded-lg disabled:bg-gray-300"
+                      >
+                        {saving ? "Saving..." : "💾 Save"}
+                      </button>
+                  </>
+              )}
+
+              {activeTab === "summary" && (
+                <div className="text-center p-4">
+                  <h2 className="text-lg font-semibold mb-4">📊 Today's Market</h2>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-gray-100 p-4 rounded-lg">
+                      <p className="text-xs text-gray-500">NIFTY</p>
+                      <p
+                      className={`text-xl font-bold ${
+                        marketSummary.nifty.change >= 0
+                          ? "text-green-600"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {marketSummary.nifty.change >= 0 ? "+" : ""}
+                      {marketSummary.nifty.change.toFixed(2)}%
+                    </p>
+                    </div>
+
+                    <div className="bg-gray-100 p-4 rounded-lg">
+                      <p className="text-xs text-gray-500">SENSEX</p>
+                      <p
+                        className={`text-xl font-bold ${
+                          marketSummary.sensex.change >= 0
+                            ? "text-green-600"
+                            : "text-red-500"
+                        }`}
+                      >
+                        {marketSummary.sensex.change >= 0 ? "+" : ""}
+                        {marketSummary.sensex.change.toFixed(2)}%
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-gray-400 mt-4">
+                    Compared to previous close
+                  </p>
+                </div>
+              )}
+
+            </>
         )}
   
       </div>
